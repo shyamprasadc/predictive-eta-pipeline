@@ -1,0 +1,68 @@
+# Core Python dependencies for Predictive ETA Calculator Pipeline
+
+# Data manipulation and analysis
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Geographic and H3 utilities
+h3>=3.7.6
+shapely>=2.0.0
+geographiclib>=2.0.0
+polyline>=2.0.0
+
+# HTTP clients and API utilities
+requests>=2.31.0
+tenacity>=8.2.0
+urllib3>=2.0.0
+
+# Configuration and validation
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# Logging and structured output
+python-json-logger>=2.0.0
+structlog>=23.0.0
+
+# Snowflake connectivity
+snowflake-connector-python>=3.6.0
+snowflake-sqlalchemy>=1.5.0
+cryptography>=41.0.0
+
+# Airflow and orchestration
+apache-airflow>=2.8.0
+apache-airflow-providers-snowflake>=5.0.0
+apache-airflow-providers-postgres>=5.0.0  # For Airflow metadata DB
+
+# dbt for data transformations
+dbt-core>=1.7.0
+dbt-snowflake>=1.7.0
+
+# Testing and quality
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Development and debugging
+ipython>=8.14.0
+jupyter>=1.0.0
+python-dateutil>=2.8.0
+
+# Optional: Production monitoring and observability
+prometheus-client>=0.17.0
+sentry-sdk>=1.32.0
+
+# Optional: Enhanced performance
+psutil>=5.9.0  # System monitoring
+orjson>=3.9.0  # Fast JSON serialization
+
+# API framework (if building optional API)
+fastapi>=0.103.0
+uvicorn>=0.23.0
+pydantic-settings>=2.0.0
+
+# Development tools
+pre-commit>=3.4.0
+commitizen>=3.8.0

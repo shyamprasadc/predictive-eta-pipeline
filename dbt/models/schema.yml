@@ -1,0 +1,282 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw data ingested from routing providers
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'PREDICTIVE_ETA') }}"
+    schema: "{{ env_var('SNOWFLAKE_SCHEMA_RAW', 'RAW') }}"
+    tables:
+      - name: routes_raw
+        description: Raw routing data from OSRM, Google Maps, and HERE APIs
+        columns:
+          - name: from_hex
+            description: Origin H3 hex ID
+            tests:
+              - not_null
+          - name: to_hex  
+            description: Destination H3 hex ID
+            tests:
+              - not_null
+          - name: provider
+            description: Routing provider (osrm, google, here)
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['osrm', 'google', 'here']
+          - name: distance_m
+            description: Route distance in meters
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
+                  max_value: 100000  # 100km max reasonable distance
+          - name: duration_s
+            description: Route duration in seconds
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: "{{ var('min_eta_seconds') }}"
+                  max_value: "{{ var('max_eta_seconds') }}"
+          - name: request_id
+            description: Unique request identifier for idempotency
+            tests:
+              - not_null
+              - unique
+
+  - name: core
+    description: Core data managed by the ETL pipeline
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'PREDICTIVE_ETA') }}"
+    schema: "{{ env_var('SNOWFLAKE_SCHEMA_CORE', 'CORE') }}"
+    tables:
+      - name: h3_lookup
+        description: H3 hexagonal grid lookup with city information
+        columns:
+          - name: hex_id
+            description: H3 hex identifier
+            tests:
+              - not_null
+              - unique
+          - name: city
+            description: City name
+            tests:
+              - not_null
+          - name: resolution
+            description: H3 resolution level
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
+                  max_value: 15
+          - name: centroid_lat
+            description: Hex centroid latitude
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: -90
+                  max_value: 90
+          - name: centroid_lng
+            description: Hex centroid longitude  
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: -180
+                  max_value: 180
+
+models:
+  - name: stg_routes_raw
+    description: Staged and cleaned routing data with provider precedence
+    columns:
+      - name: from_hex
+        description: Origin H3 hex ID
+        tests:
+          - not_null
+      - name: to_hex
+        description: Destination H3 hex ID
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "!= from_hex"
+      - name: provider
+        description: Selected provider after precedence rules
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['osrm', 'google', 'here']
+      - name: duration_s
+        description: Route duration in seconds
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "{{ var('min_eta_seconds') }}"
+              max_value: "{{ var('max_eta_seconds') }}"
+      - name: time_slab
+        description: Time slab assignment
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['0-4', '4-8', '8-12', '12-16', '16-20', '20-24']
+      - name: weekday
+        description: Day of week
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      - name: avg_speed_kmh
+        description: Average speed in km/h
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 200  # Reasonable speed limits
+
+  - name: stg_h3_lookup
+    description: Staged H3 lookup with geographic enrichments
+    columns:
+      - name: hex_id
+        description: H3 hex identifier
+        tests:
+          - not_null
+          - unique
+      - name: city
+        description: City name
+        tests:
+          - not_null
+      - name: zone_type
+        description: Zone classification (Core, Urban, Suburban, Outer)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Core', 'Urban', 'Suburban', 'Outer']
+      - name: distance_from_center_km
+        description: Distance from city center in km
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+
+  - name: dim_time_slab
+    description: Time slab dimension with business period classifications
+    columns:
+      - name: slab_weekday_key
+        description: Composite key for slab and weekday
+        tests:
+          - not_null
+          - unique
+      - name: slab_name
+        description: Time slab name
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['0-4', '4-8', '8-12', '12-16', '16-20', '20-24']
+      - name: weekday_name
+        description: Weekday name
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      - name: business_period
+        description: Business period classification
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Business Hours', 'Evening Rush', 'Morning Rush', 'Weekend Active', 'Night', 'Off-Peak']
+      - name: expected_traffic_intensity
+        description: Expected traffic intensity level
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Low', 'Medium', 'Medium-High', 'High']
+
+  - name: fct_eta_hex_pair
+    description: Fact table with ETA statistics by hex pairs and time periods
+    tests:
+      # Table-level tests
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 100
+          max_value: 10000000
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - from_hex
+            - to_hex  
+            - weekday
+            - time_slab
+    columns:
+      - name: from_hex
+        description: Origin H3 hex ID
+        tests:
+          - not_null
+      - name: to_hex
+        description: Destination H3 hex ID
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "!= from_hex"
+      - name: weekday
+        description: Day of week
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      - name: time_slab
+        description: Time slab
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['0-4', '4-8', '8-12', '12-16', '16-20', '20-24']
+      - name: min_eta_s
+        description: Minimum ETA in seconds
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "{{ var('min_eta_seconds') }}"
+              max_value: "{{ var('max_eta_seconds') }}"
+      - name: max_eta_s
+        description: Maximum ETA in seconds
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "{{ var('min_eta_seconds') }}"
+              max_value: "{{ var('max_eta_seconds') }}"
+          - dbt_utils.expression_is_true:
+              expression: ">= min_eta_s"
+      - name: avg_eta_s
+        description: Average ETA in seconds
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "between min_eta_s and max_eta_s"
+      - name: sample_count
+        description: Number of route samples
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "{{ var('min_sample_count') }}"
+              max_value: 10000
+      - name: data_quality_score
+        description: Data quality score (0-100)
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+      - name: reliability_category
+        description: ETA reliability classification
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['High', 'Medium', 'Low']
+      - name: eta_performance_rating
+        description: Business performance rating
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Excellent', 'Good', 'Acceptable', 'Poor', 'Very Poor']
+      - name: route_type
+        description: Route type classification
+        tests:
+          - accepted_values:
+              values: ['Core-to-Core', 'Core-to-Outbound', 'Inbound-to-Core', 'Same-Zone', 'Cross-Zone']
+      - name: rain_eta_s
+        description: Rain-adjusted maximum ETA
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= max_eta_s"

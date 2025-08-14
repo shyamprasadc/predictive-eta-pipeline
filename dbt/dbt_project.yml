@@ -1,0 +1,71 @@
+# dbt project configuration for Predictive ETA Calculator
+
+name: 'predictive_eta_calculator'
+version: '1.0.0'
+config-version: 2
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'predictive_eta'
+
+# These configurations specify where dbt should look for different types of files.
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"  # directory which will store compiled SQL files
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+# Configuring models
+models:
+  predictive_eta_calculator:
+    # Config indicated by + and applies to all files under models/staging/
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
+      +post-hook: ["{{ optimize_table() }}"]
+
+# Test configurations
+tests:
+  +store_failures: true
+  +schema: test_results
+
+# Seed configurations
+seeds:
+  predictive_eta_calculator:
+    +schema: seeds
+
+# Snapshot configurations
+snapshots:
+  predictive_eta_calculator:
+    +target_schema: snapshots
+
+# Variables (can be overridden at runtime)
+vars:
+  # Date/time settings
+  default_start_date: '2024-01-01'
+  default_lookback_days: 30
+  
+  # Data quality thresholds
+  min_sample_count: 5
+  max_eta_seconds: 7200  # 2 hours
+  min_eta_seconds: 30    # 30 seconds
+  
+  # Business logic
+  rain_uplift_default: 0.15  # 15% default rain uplift
+  
+  # ETL settings
+  batch_size: 1000
+  parallel_jobs: 4
+
+# Macro configurations
+dispatch:
+  - macro_namespace: dbt_utils
+    search_order: ['predictive_eta_calculator', 'dbt_utils']
