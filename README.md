@@ -17,9 +17,10 @@ This pipeline processes routing data from multiple providers (OSRM, Google Maps,
 - **H3 Spatial Indexing**: Resolution 7 hexagonal grids (~1.22km edge length)
 - **Time-Based Aggregations**: 6 time slabs across weekdays with min/max ETA ranges
 - **Weather Adjustments**: Configurable rain uplift factors
-- **Production-Ready**: Comprehensive error handling, logging, monitoring, and testing
+- **Production-Ready**: Comprehensive error handling, logging, and data quality validation
 - **Scalable Architecture**: Batch processing with configurable concurrency
 - **Data Quality**: Extensive validation, deduplication, and quality scoring
+- **State Management**: Processing state tracking and backfill capabilities
 
 ## 📊 Architecture
 
@@ -51,7 +52,7 @@ predictive-eta-pipeline/
 ├── airflow/                    # Airflow orchestration
 │   ├── dags/
 │   │   └── dag_predictive_eta.py
-│   ├── include/sql/
+│   ├── include/sql/           # SQL templates (future use)
 │   └── docker-compose.yml     # Local development
 ├── etl/                       # ETL Python package
 │   ├── common/                # Shared utilities
@@ -356,38 +357,21 @@ GROUP BY DATE(updated_at)
 ORDER BY pipeline_date DESC;
 ```
 
-### Operational Alerts
+### Health Checks
 
-Monitor these conditions:
+The pipeline includes health checks for routing providers:
 
-- Pipeline failures or timeouts
-- Data freshness > 24 hours
-- Sample count drops below thresholds
-- Provider API failures > 10%
-- Warehouse credit consumption spikes
-
-## 🧪 Testing
-
-### Unit Tests
-
-```bash
-pytest tests/unit/
+```python
+# Check provider health
+from etl.ingest import create_distance_matrix_client
+client = create_distance_matrix_client()
+health_status = client.health_check_all_providers()
+print(health_status)  # {'osrm': True, 'google': False, 'here': True}
 ```
 
-### Integration Tests
-
-```bash
-pytest tests/integration/
-```
+## 🧪 Data Quality Testing
 
 ### dbt Tests
-
-```bash
-dbt test --select staging
-dbt test --select marts
-```
-
-### Data Quality Tests
 
 The pipeline includes comprehensive data quality tests:
 
@@ -396,6 +380,15 @@ The pipeline includes comprehensive data quality tests:
 - **Range Validation**: ETA bounds and geographic coordinates
 - **Completeness**: Required field validation
 - **Business Logic**: Min ≤ Max ETA, rain adjustments
+
+```bash
+# Run all tests
+dbt test
+
+# Run specific test categories
+dbt test --select staging
+dbt test --select marts
+```
 
 ## 🔧 Troubleshooting
 
@@ -459,7 +452,18 @@ export BATCH_SIZE=500
 export MAX_CONCURRENT_REQUESTS=20
 ```
 
-## 🤝 Contributing
+## 🚀 Future Enhancements
+
+### Planned Features
+
+- **Unit & Integration Tests**: Comprehensive test suite with pytest
+- **FastAPI Service**: REST API for querying ETA data
+- **Advanced Monitoring**: Prometheus metrics and alerting
+- **Performance Optimization**: Enhanced clustering and materialized views
+- **Weather Integration**: Real-time weather data for dynamic adjustments
+- **Machine Learning**: Predictive ETA models with historical patterns
+
+### Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
